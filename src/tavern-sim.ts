@@ -225,8 +225,7 @@ async function runEvening(
   for (const v of actors) {
     try {
       await selectAction({
-        initiatorID:    toUID(v),
-        actionSelector: 'pick-evening-action',
+        initiatorID: toUID(v),
       });
     } catch {
       // No eligible action — villager has a quiet drink
