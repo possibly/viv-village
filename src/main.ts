@@ -1,60 +1,27 @@
-import './style.css';
 import { createVillage, simulateDay } from './simulation';
-import { renderAll } from './renderer';
-import type { VillageState } from './types';
 
-let state: VillageState;
-let intervalId: number | null = null;
-let speed = 150;
-let running = false;
-let currentDay = 0;
-const MAX_DAYS = 5 * 365;
+const state = createVillage();
+const DAYS = 5 * 365;
 
-function init() {
-  state = createVillage();
-  currentDay = 0;
-  renderAll(state);
-  updateButtons();
-  document.getElementById('status')!.textContent = 'Ready — press Start.';
-}
-
-function step() {
-  if (currentDay >= MAX_DAYS) {
-    stop();
-    document.getElementById('status')!.textContent = '5 years complete.';
-    return;
-  }
+for (let i = 0; i < DAYS; i++) {
   simulateDay(state);
-  currentDay++;
-  renderAll(state);
-  const pct = ((currentDay / MAX_DAYS) * 100).toFixed(1);
-  document.getElementById('status')!.textContent =
-    `Day ${currentDay} / ${MAX_DAYS} (${pct}%)`;
 }
 
-function start() {
-  if (running) return;
-  running = true;
-  intervalId = setInterval(step, speed) as unknown as number;
-  updateButtons();
-}
+const alive = state.villagers.filter(v => v.alive);
+const avgHealth = (alive.reduce((s, v) => s + v.health, 0) / alive.length).toFixed(1);
+const avgWealth = (alive.reduce((s, v) => s + v.wealth, 0) / alive.length).toFixed(1);
+const births  = state.log.filter(e => e.type === 'birth').length;
+const deaths  = state.log.filter(e => e.type === 'death').length;
+const marriages = state.log.filter(e => e.type === 'marriage').length;
 
-function stop() {
-  if (intervalId !== null) clearInterval(intervalId);
-  intervalId = null;
-  running = false;
-  updateButtons();
-}
-
-function updateButtons() {
-  (document.getElementById('btn-start') as HTMLButtonElement).disabled = running;
-  (document.getElementById('btn-stop') as HTMLButtonElement).disabled = !running;
-}
-
-(window as any).simStart  = start;
-(window as any).simStop   = stop;
-(window as any).simStep   = step;
-(window as any).simReset  = () => { stop(); init(); };
-(window as any).setSpeed  = (ms: number) => { speed = ms; if (running) { stop(); start(); } };
-
-init();
+console.log('=== 5-Year Summary ===');
+console.log(`Population:  ${alive.length} (started ~100)`);
+console.log(`Avg health:  ${avgHealth}`);
+console.log(`Avg wealth:  ${avgWealth} coins`);
+console.log(`Grain store: ${state.grain.toFixed(0)} bushels`);
+console.log(`Births:      ${births}`);
+console.log(`Deaths:      ${deaths}`);
+console.log(`Marriages:   ${marriages}`);
+console.log(`Events:      ${state.log.filter(e => e.type === 'event').length}`);
+console.log('\nLast 10 chronicle entries:');
+state.log.slice(-10).forEach(e => console.log(` [Yr${e.year} ${e.season}] ${e.text}`));

@@ -2,75 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Medieval Village Simulator</title>
 </head>
 <body>
-  <div id="app">
-    <header>
-      <h1>⚔️ Medieval Village Simulator</h1>
-      <div id="controls">
-        <button id="btn-start" onclick="simStart()">▶ Start</button>
-        <button id="btn-stop"  onclick="simStop()" disabled>⏸ Pause</button>
-        <button onclick="simStep()">⏭ Step</button>
-        <button onclick="simReset()">↺ Reset</button>
-        <label>Speed:
-          <select onchange="setSpeed(+this.value)">
-            <option value="300">Slow</option>
-            <option value="150" selected>Normal</option>
-            <option value="50">Fast</option>
-            <option value="10">Very Fast</option>
-          </select>
-        </label>
-        <span id="status" class="status">Ready.</span>
-      </div>
-    </header>
-
-    <div id="main-layout">
-      <aside id="sidebar">
-        <section class="panel">
-          <h2>Village</h2>
-          <table class="stat-table">
-            <tr><td>Date</td><td id="stat-year">—</td></tr>
-            <tr><td>Season</td><td id="stat-season">—</td></tr>
-            <tr><td>Population</td><td id="stat-pop">—</td></tr>
-            <tr><td>Grain</td><td id="stat-grain">—</td></tr>
-            <tr><td>Bread</td><td id="stat-bread">—</td></tr>
-            <tr><td>Tools</td><td id="stat-tools">—</td></tr>
-            <tr><td>Treasury</td><td id="stat-treasury">—</td></tr>
-          </table>
-        </section>
-        <section class="panel">
-          <h2>Wellbeing</h2>
-          <table class="stat-table">
-            <tr><td>Avg Health</td><td id="stat-health">—</td></tr>
-            <tr><td>Avg Hunger</td><td id="stat-hunger">—</td></tr>
-            <tr><td>Ill</td><td id="stat-ill">—</td></tr>
-            <tr><td>At Tavern</td><td id="stat-tavern">—</td></tr>
-          </table>
-        </section>
-        <section class="panel">
-          <h2>History</h2>
-          <canvas id="chart" width="220" height="120"></canvas>
-          <div class="chart-legend">
-            <span style="color:#4caf50">■ Population</span>
-            <span style="color:#c8a84b">■ Grain</span>
-          </div>
-        </section>
-      </aside>
-
-      <main id="log-panel">
-        <h2>Village Chronicle</h2>
-        <div id="log"></div>
-      </main>
-
-      <aside id="villagers-panel">
-        <h2>Villagers <small id="vcount"></small></h2>
-        <div id="villagers"></div>
-      </aside>
-    </div>
-  </div>
+  <pre id="output">Running simulation — check console.</pre>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
