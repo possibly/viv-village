@@ -47,6 +47,16 @@ export interface Villager {
   alive: boolean;
   daysMarried: number;
   daysIll: number;
+  // social fields populated by tavern Viv sim
+  friendships: Record<number, number>;   // villager id -> friendship score 0–100
+  romanticInterest: number | null;       // id of the person they're attracted to
+  romanticAffection: Record<number, number>; // id -> affection score 0–100
+  jobLeads: { fromId: number; occupation: Occupation; note: string }[];
+  reputation: number;   // 0–100, social standing
+  secrets: string[];    // confided secrets they carry
+  gossipKnows: string[]; // gossip they've heard
+  quarreled: Record<number, boolean>; // id -> whether they've quarreled
+  lastTavernActions: string[]; // viv action names from most recent evening
 }
 
 export interface VillageState {
@@ -70,7 +80,7 @@ export interface LogEntry {
   day: number;
   season: Season;
   text: string;
-  type: 'info' | 'event' | 'death' | 'birth' | 'marriage' | 'tavern';
+  type: 'info' | 'event' | 'death' | 'birth' | 'marriage' | 'tavern' | 'social';
 }
 
 export interface ChartPoint {

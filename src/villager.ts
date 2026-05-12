@@ -42,6 +42,15 @@ export function createVillager(
     alive: true,
     daysMarried: 0,
     daysIll: 0,
+    friendships: {},
+    romanticInterest: null,
+    romanticAffection: {},
+    quarreled: {},
+    jobLeads: [],
+    reputation: Math.floor(rnd(20, 60)),
+    secrets: [],
+    gossipKnows: [],
+    lastTavernActions: [],
     ...overrides,
   };
 }
