@@ -7,13 +7,14 @@ import type {
   WorkResult,
 } from './types';
 import { randomName } from './names';
+import { random, randomBetween } from './random';
 
 let _nextId = 1;
 export function setNextId(n: number) { _nextId = n; }
 export function getNextId() { return _nextId; }
 
 function rnd(min: number, max: number) {
-  return min + Math.random() * (max - min);
+  return randomBetween(min, max);
 }
 
 function randPersonality(): Personality {
@@ -31,7 +32,7 @@ export function createVillager(
   gender?: Gender,
   overrides?: Partial<Villager>,
 ): Villager {
-  const g: Gender = gender ?? (Math.random() < 0.5 ? 'male' : 'female');
+  const g: Gender = gender ?? (random() < 0.5 ? 'male' : 'female');
   return {
     id: _nextId++,
     name: randomName(g),

@@ -1,6 +1,7 @@
 import type { VillageState, Villager, Season, Occupation, WorkResult } from './types';
 import type { LogEntry } from './types';
 import { createVillager, tavernChance, workOutput, setNextId, getNextId } from './villager';
+import { random, randomBetween, setRandomSeed } from './random';
 
 const DAYS_PER_SEASON = 91;
 const SEASONS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
@@ -16,10 +17,10 @@ function season(day: number): Season {
 }
 
 function rnd(min: number, max: number) {
-  return min + Math.random() * (max - min);
+  return randomBetween(min, max);
 }
 
-function rand() { return Math.random(); }
+function rand() { return random(); }
 
 function log(state: VillageState, text: string, type: LogEntry['type'] = 'info') {
   state.log.push({ year: state.year, day: state.day, season: state.season, text, type });
@@ -119,9 +120,9 @@ export function simulateDay(state: VillageState): void {
     v.gender === 'female' && v.spouseId !== null && v.age >= 16 && v.age <= 42
   );
   for (const mother of marriedWomen) {
-    const birthChance = 0.003 * (mother.health / 100);
+      const birthChance = 0.003 * (mother.health / 100);
     if (rand() < birthChance) {
-      const baby = createVillager('peasant', 0, Math.random() < 0.5 ? 'male' : 'female');
+      const baby = createVillager('peasant', 0, rand() < 0.5 ? 'male' : 'female');
       baby.wealth = 0;
       baby.hunger = 0;
       state.villagers.push(baby);
@@ -179,6 +180,8 @@ export function simulateDay(state: VillageState): void {
     log(state, `Year ${state.year} begins. Field fertility: ${(state.fieldFertility * 100).toFixed(0)}%.`, 'event');
   }
 }
+
+export { setRandomSeed };
 
 function advanceMorningNeeds(villagers: Villager[]): void {
   for (const villager of villagers) {

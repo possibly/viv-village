@@ -7,13 +7,15 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tavern": "tsx src/tavern-sim.ts"
+    "tavern": "tsx src/tavern-sim.ts",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^24.12.4",
     "tsx": "^4.21.0",
     "typescript": "~6.0.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "^4.0.8"
   },
   "dependencies": {
     "@siftystudio/viv-runtime": "^0.10.2",

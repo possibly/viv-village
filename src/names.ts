@@ -1,3 +1,5 @@
+import { random } from './random';
+
 export const MALE_NAMES = [
   'Aldric', 'Bertram', 'Cedric', 'Dunstan', 'Edmund', 'Fulke', 'Godwin',
   'Harold', 'Ingram', 'Joscelin', 'Kenelm', 'Leofric', 'Mauger', 'Nigel',
@@ -26,7 +28,7 @@ export const SURNAMES = [
 
 export function randomName(gender: 'male' | 'female'): string {
   const first = gender === 'male' ? MALE_NAMES : FEMALE_NAMES;
-  const f = first[Math.floor(Math.random() * first.length)];
-  const s = SURNAMES[Math.floor(Math.random() * SURNAMES.length)];
+  const f = first[Math.floor(random() * first.length)];
+  const s = SURNAMES[Math.floor(random() * SURNAMES.length)];
   return `${f} ${s}`;
 }
