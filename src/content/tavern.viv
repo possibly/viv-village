@@ -43,8 +43,8 @@ action chat from tavern-action:
     join conditions:
         @actor.socialNeed > 20
     join effects:
-        @actor.friendships[@other.id] += 5
-        @other.friendships[@actor.id] += 5
+        @actor.friendships[@other.id] += 2
+        @other.friendships[@actor.id] += 2
         @actor.socialNeed -= 15
 
 
@@ -60,9 +60,16 @@ action deep-talk from tavern-action:
         @actor.friendships[@other.id] >= 18
         @actor.socialNeed > 30
     join effects:
-        @actor.friendships[@other.id] += 15
-        @other.friendships[@actor.id] += 15
+        @actor.friendships[@other.id] += 5
+        @other.friendships[@actor.id] += 5
         @actor.socialNeed -= 25
+    reactions:
+        if 8% && @actor.friendships[@other.id] >= 35 && @other.friendships[@actor.id] >= 30:
+            queue plan thick-as-thieves:
+                with partial:
+                    @first: @actor
+                    @second: @other
+        end
 
 
 // ---------------------------------------------------------------------------
@@ -78,8 +85,15 @@ action flirt from tavern-action:
         @other.age >= 18
         @actor.romanticAffection[@other.id] < 60
     join effects:
-        @actor.romanticAffection[@other.id] += 15
-        @actor.friendships[@other.id] += 3
+        @actor.romanticAffection[@other.id] += 4
+        @actor.friendships[@other.id] += 1
+    reactions:
+        if @other.romanticAffection[@actor.id] >= 6:
+            queue action-selector flirt-response:
+                with partial:
+                    @reactor: @other
+                    @admirer: @actor
+        end
 
 
 // ---------------------------------------------------------------------------
@@ -93,17 +107,71 @@ action declare-affection from tavern-action:
     join conditions:
         @actor.age >= 18
         @other.age >= 18
-        @actor.romanticAffection[@other.id] >= 15
+        @actor.romanticAffection[@other.id] >= 10
         @actor.is_single == true
     join effects:
-        @actor.romanticAffection[@other.id] += 25
+        @actor.romanticAffection[@other.id] += 8
         @actor.romanticInterest = @other.id
-        @other.romanticAffection[@actor.id] += 8
-        @actor.friendships[@other.id] += 10
+        @other.romanticAffection[@actor.id] += 3
+        @actor.friendships[@other.id] += 3
+    reactions:
+        queue plan courtship:
+            with partial:
+                @suitor: @actor
+                @beloved: @other
+        if 12% && @other.romanticAffection[@actor.id] >= 14:
+            queue plan moonlit-walk:
+                with partial:
+                    @first: @actor
+                    @second: @other
+        end
     embargoes:
         embargo:
             roles: @actor, @other
             time: 10 hours
+
+reserved action flirt-back:
+    gloss: "@reactor answers @admirer's flirt"
+    report: '{@reactor.name} answers {@admirer.name} with a crooked smile.'
+    importance: 2
+    roles:
+        @reactor:
+            as: initiator
+        @admirer:
+            as: recipient, precast
+    effects:
+        @reactor.romanticAffection[@admirer.id] += 5
+        @reactor.friendships[@admirer.id] += 2
+        @admirer.friendships[@reactor.id] += 2
+
+reserved action demur:
+    gloss: "@reactor gently turns @admirer aside"
+    report: '{@reactor.name} gives {@admirer.name} a patient look, but lets the moment pass.'
+    importance: 1
+    roles:
+        @reactor:
+            as: initiator
+        @admirer:
+            as: recipient, precast
+    effects:
+        @reactor.friendships[@admirer.id] += 1
+        @admirer.friendships[@reactor.id] += 1
+
+reserved action-selector flirt-response:
+    roles:
+        @reactor:
+            as: initiator
+        @admirer:
+            as: recipient, precast
+    target with weights:
+        (3) flirt-back:
+            with partial:
+                @reactor: @reactor
+                @admirer: @admirer
+        (2) demur:
+            with partial:
+                @reactor: @reactor
+                @admirer: @admirer
 
 
 // ---------------------------------------------------------------------------
@@ -119,8 +187,8 @@ action buy-a-round from tavern-action:
         @actor.personality_thrifty < 0.7
     join effects:
         @actor.wealth -= 2
-        @actor.reputation += 5
-        @other.friendships[@actor.id] += 10
+        @actor.reputation += 3
+        @other.friendships[@actor.id] += 4
 
 
 // ---------------------------------------------------------------------------
@@ -135,10 +203,21 @@ action share-gossip from tavern-action:
         @actor.has_gossip == true
         @actor.socialNeed > 25
     join effects:
-        @actor.friendships[@other.id] += 5
-        @other.friendships[@actor.id] += 5
+        @actor.friendships[@other.id] += 2
+        @other.friendships[@actor.id] += 2
         @actor.has_gossip = false
         @actor.socialNeed -= 10
+    reactions:
+        queue action pass-rumor:
+            with partial:
+                @rumor-monger: @other
+                @listener: @actor
+        if 6% && @actor.friendships[@other.id] >= 25:
+            queue plan rumor-spree:
+                with partial:
+                    @instigator: @actor
+                    @accomplice: @other
+        end
 
 
 // ---------------------------------------------------------------------------
@@ -153,9 +232,39 @@ action confide from tavern-action:
         @actor.friendships[@other.id] >= 20
         @actor.health < 70
     join effects:
-        @actor.friendships[@other.id] += 20
-        @other.friendships[@actor.id] += 15
+        @actor.friendships[@other.id] += 6
+        @other.friendships[@actor.id] += 5
         @actor.socialNeed -= 20
+    reactions:
+        if 10% && @actor.friendships[@other.id] >= 40:
+            queue action vow-support:
+                with partial:
+                    @actor: @other
+                    @other: @actor
+        end
+
+reserved action pass-rumor:
+    gloss: "@rumor-monger passes a rumor on"
+    report: '{@rumor-monger.name} pockets the rumor for later and repeats a sliver of it back to {@listener.name}.'
+    importance: 1
+    roles:
+        @rumor-monger:
+            as: initiator
+        @listener:
+            as: recipient, precast
+    effects:
+        @rumor-monger.has_gossip = true
+        @rumor-monger.reputation += 1
+        @rumor-monger.friendships[@listener.id] += 1
+
+reserved action vow-support from tavern-action:
+    gloss: "@actor promises to stand by @other"
+    report: '{@actor.name} clasps {@other.name} by the shoulder and promises they will not face things alone.'
+    importance: 4
+    join effects:
+        @actor.friendships[@other.id] += 9
+        @other.friendships[@actor.id] += 7
+        @actor.reputation += 2
 
 
 // ---------------------------------------------------------------------------
@@ -170,9 +279,9 @@ action share-job-tip from tavern-action:
         @actor.friendships[@other.id] >= 15
         @actor.reputation >= 30
     join effects:
-        @actor.reputation += 5
-        @actor.friendships[@other.id] += 10
-        @other.friendships[@actor.id] += 5
+        @actor.reputation += 2
+        @actor.friendships[@other.id] += 4
+        @other.friendships[@actor.id] += 2
 
 
 // ---------------------------------------------------------------------------
@@ -189,9 +298,9 @@ action offer-mentorship from tavern-action:
         @actor.friendships[@other.id] >= 25
         @actor.reputation >= 45
     join effects:
-        @actor.friendships[@other.id] += 30
-        @other.friendships[@actor.id] += 25
-        @actor.reputation += 10
+        @actor.friendships[@other.id] += 8
+        @other.friendships[@actor.id] += 6
+        @actor.reputation += 4
     embargoes:
         embargo:
             roles: @actor, @other
@@ -211,7 +320,7 @@ action toast-the-village from tavern-action:
         @actor.reputation >= 40
     join effects:
         @actor.wealth -= 3
-        @actor.reputation += 10
+        @actor.reputation += 4
     embargoes:
         embargo:
             roles: @actor
@@ -231,10 +340,15 @@ action quarrel from tavern-action:
         @actor.hunger > 45
         @actor.friendships[@other.id] < 10
     join effects:
-        @actor.friendships[@other.id] -= 15
-        @other.friendships[@actor.id] -= 15
+        @actor.friendships[@other.id] -= 5
+        @other.friendships[@actor.id] -= 5
         @actor.quarreled[@other.id] = true
         @other.quarreled[@actor.id] = true
+    reactions:
+        queue plan mend-fence:
+            with partial:
+                @first: @actor
+                @second: @other
     embargoes:
         embargo:
             roles: @actor, @other
@@ -251,16 +365,127 @@ action reconcile from tavern-action:
     importance: 3
     join conditions:
         @actor.quarreled[@other.id] == true
-        @actor.friendships[@other.id] >= 5
+        @actor.friendships[@other.id] >= 0
     join effects:
-        @actor.friendships[@other.id] += 20
-        @other.friendships[@actor.id] += 20
+        @actor.friendships[@other.id] += 6
+        @other.friendships[@actor.id] += 6
         @actor.quarreled[@other.id] = false
         @other.quarreled[@actor.id] = false
     embargoes:
         embargo:
             roles: @actor, @other
             time: 24 hours
+
+plan courtship:
+    roles:
+        @suitor:
+            as: character
+        @beloved:
+            as: character
+    phases:
+        >approach:
+            wait:
+                timeout: 2 hours
+        >gesture:
+            queue action buy-a-round:
+                with partial:
+                    @actor: @suitor
+                    @other: @beloved
+            wait:
+                timeout: 2 hours
+        >confession:
+            queue action declare-affection:
+                with partial:
+                    @actor: @suitor
+                    @other: @beloved
+
+plan moonlit-walk:
+    roles:
+        @first:
+            as: character
+        @second:
+            as: character
+    phases:
+        >slip-out:
+            wait:
+                timeout: 1 hours
+        >private-word:
+            queue action deep-talk:
+                with partial:
+                    @actor: @first
+                    @other: @second
+        >closer:
+            wait:
+                timeout: 1 hours
+        >return:
+            queue action flirt-back:
+                with partial:
+                    @reactor: @second
+                    @admirer: @first
+
+plan thick-as-thieves:
+    roles:
+        @first:
+            as: character
+        @second:
+            as: character
+    phases:
+        >scheme:
+            wait:
+                timeout: 1 hours
+        >toast:
+            queue action buy-a-round:
+                with partial:
+                    @actor: @first
+                    @other: @second
+        >solidify:
+            wait:
+                timeout: 1 hours
+        >pledge:
+            queue action vow-support:
+                with partial:
+                    @actor: @second
+                    @other: @first
+
+plan rumor-spree:
+    roles:
+        @instigator:
+            as: character
+        @accomplice:
+            as: character
+    phases:
+        >circulate:
+            wait:
+                timeout: 1 hours
+        >echo:
+            queue action pass-rumor:
+                with partial:
+                    @rumor-monger: @accomplice
+                    @listener: @instigator
+        >laugh-over-it:
+            wait:
+                timeout: 1 hours
+        >bond:
+            queue action chat:
+                with partial:
+                    @actor: @instigator
+                    @other: @accomplice
+
+plan mend-fence:
+    roles:
+        @first:
+            as: character
+        @second:
+            as: character
+    phases:
+        >cool-off:
+            wait:
+                timeout: 3 hours
+        >repair:
+            queue action reconcile:
+                with partial:
+                    @actor: @first
+                    @other: @second
 
 
 // ---------------------------------------------------------------------------

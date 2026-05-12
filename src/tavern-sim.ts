@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import {
   initializeVivRuntime,
   selectAction,
+  tickPlanner,
   EntityType,
 } from '@siftystudio/viv-runtime';
 import type {
@@ -24,6 +25,7 @@ import type {
 import set from 'lodash/set.js';
 
 import { createVillage, simulateDay } from './simulation.js';
+import { applyAffinityChange, applyRomanticAffinityChange } from './social.js';
 import type { Villager, VillageState } from './types.js';
 
 // ─── Bundle ──────────────────────────────────────────────────────────────────
@@ -230,6 +232,32 @@ function syncBack(v: Villager): void {
   }
 }
 
+function findVillagerByUID(villagers: Villager[], uid: UID | null | undefined): Villager | undefined {
+  return typeof uid === 'string' && uid.startsWith('v-')
+    ? villagers.find(v => toUID(v) === uid)
+    : undefined;
+}
+
+function applyConversationAffinity(alive: Villager[], action: ActionView): void {
+  const actor = findVillagerByUID(alive, action.initiator);
+  const recipients = (action.recipients ?? [])
+    .map(uid => findVillagerByUID(alive, uid))
+    .filter((v): v is Villager => Boolean(v));
+
+  if (!actor || recipients.length !== 1) return;
+
+  const other = recipients[0];
+  applyAffinityChange(actor, other, action.name);
+  applyAffinityChange(other, actor, action.name);
+
+  if (action.name === 'flirt' || action.name === 'flirt-back' || action.name === 'declare-affection') {
+    applyRomanticAffinityChange(actor, other, action.name);
+    if (action.name === 'flirt-back') {
+      applyRomanticAffinityChange(other, actor, action.name);
+    }
+  }
+}
+
 // ─── Run one evening at the tavern ───────────────────────────────────────────
 async function runEvening(
   state: VillageState,
@@ -276,6 +304,7 @@ async function runEvening(
         // No eligible action for this actor on this micro-step.
       }
     }
+    await tickPlanner();
     timestamp += ticksPerStep;
   }
 
@@ -306,12 +335,14 @@ async function runEvening(
       type: 'social',
     });
 
+    applyConversationAffinity(alive, action);
+
     // Record job leads on recipient villagers
     if (action.name === 'share-job-tip') {
-      const fromV = alive.find(v => toUID(v) === action.initiator);
+      const fromV = findVillagerByUID(alive, action.initiator);
       const toUIDs = action.recipients ?? [];
       if (fromV && toUIDs.length > 0) {
-        const toV = alive.find(v => toUID(v) === toUIDs[0]);
+        const toV = findVillagerByUID(alive, toUIDs[0]);
         if (toV) {
           const dup = toV.jobLeads.some(l => l.fromId === fromV.id && l.occupation === fromV.occupation);
           if (!dup) {

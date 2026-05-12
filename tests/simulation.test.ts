@@ -14,6 +14,7 @@ function makeVillager(
     hunger: 0,
     socialNeed: 0,
     wealth: 0,
+    reputation: 40,
     spouseId: null,
     childrenIds: [],
     personality: {
@@ -81,6 +82,7 @@ describe('simulation seeding and day progression', () => {
 
   it('simulates a deterministic work, feed, and milling day', () => {
     setNextId(1);
+    setRandomSeed(123);
     const farmer = makeVillager('farmer', {
       name: 'Farmer',
       hunger: 50,
@@ -115,9 +117,9 @@ describe('simulation seeding and day progression', () => {
 
     expect(state.day).toBe(2);
     expect(state.season).toBe('spring');
-    expect(state.grain).toBeCloseTo(14.82, 6);
-    expect(state.bread).toBeCloseTo(6.58, 6);
-    expect(state.treasury).toBeCloseTo(0.364, 6);
+    expect(state.grain).toBeCloseTo(14.9656, 6);
+    expect(state.bread).toBeCloseTo(6.7864, 6);
+    expect(state.treasury).toBeCloseTo(0.39312, 6);
     expect(state.tavernVisits).toBe(0);
     expect(farmer.hunger).toBe(18);
     expect(miller.hunger).toBe(18);

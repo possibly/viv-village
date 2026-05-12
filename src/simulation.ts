@@ -114,6 +114,7 @@ export function simulateDay(state: VillageState, options: { skipTavern?: boolean
     runTavernPhase(state, alive);
   }
   growSocialNeed(alive);
+  applySocialAftermath(state, alive);
   processDeaths(state, alive);
 
   // --- BIRTHS ---
@@ -136,14 +137,16 @@ export function simulateDay(state: VillageState, options: { skipTavern?: boolean
   }
 
   // --- MARRIAGES ---
-  const singleMen = aliveNow.filter(v => v.gender === 'male' && v.spouseId === null && v.age >= 18 && v.age <= 50);
-  const singleWomen = aliveNow.filter(v => v.gender === 'female' && v.spouseId === null && v.age >= 16 && v.age <= 45);
-  if (singleMen.length > 0 && singleWomen.length > 0 && rand() < 0.02) {
-    const m = singleMen[Math.floor(rand() * singleMen.length)];
-    const f = singleWomen[Math.floor(rand() * singleWomen.length)];
-    m.spouseId = f.id;
-    f.spouseId = m.id;
-    log(state, `${m.name} and ${f.name} were married.`, 'marriage');
+  if (!tryRomanticMarriage(state, aliveNow)) {
+    const singleMen = aliveNow.filter(v => v.gender === 'male' && v.spouseId === null && v.age >= 18 && v.age <= 50);
+    const singleWomen = aliveNow.filter(v => v.gender === 'female' && v.spouseId === null && v.age >= 16 && v.age <= 45);
+    if (singleMen.length > 0 && singleWomen.length > 0 && rand() < 0.02) {
+      const m = singleMen[Math.floor(rand() * singleMen.length)];
+      const f = singleWomen[Math.floor(rand() * singleWomen.length)];
+      m.spouseId = f.id;
+      f.spouseId = m.id;
+      log(state, `${m.name} and ${f.name} were married.`, 'marriage');
+    }
   }
 
   // --- RANDOM EVENTS (every ~30 days) ---
@@ -322,6 +325,47 @@ function growSocialNeed(villagers: Villager[]): void {
       villager.socialNeed = Math.min(100, villager.socialNeed + 3);
     }
   }
+}
+
+function applySocialAftermath(state: VillageState, villagers: Villager[]): void {
+  for (const villager of villagers) {
+    const feudCount = Object.values(villager.quarreled).filter(Boolean).length;
+    if (feudCount > 0) {
+      villager.reputation = Math.max(0, villager.reputation - Math.min(0.6, feudCount * 0.15));
+    }
+
+    if (villager.occupation === 'peasant' && villager.age >= 16 && villager.jobLeads.length > 0 && rand() < 0.03) {
+      const lead = villager.jobLeads[Math.floor(rand() * villager.jobLeads.length)];
+      if (lead.occupation !== 'peasant') {
+        villager.occupation = lead.occupation;
+        log(state, `${villager.name} took up ${lead.occupation} work after following a tavern lead.`, 'social');
+      }
+    }
+  }
+}
+
+function tryRomanticMarriage(state: VillageState, villagers: Villager[]): boolean {
+  const eligible = villagers.filter(v =>
+    v.alive &&
+    v.spouseId === null &&
+    ((v.gender === 'male' && v.age >= 18 && v.age <= 50) || (v.gender === 'female' && v.age >= 16 && v.age <= 45))
+  );
+
+  for (const v of eligible) {
+    if (v.romanticInterest === null) continue;
+    const other = villagers.find(x => x.id === v.romanticInterest);
+    if (!other || !other.alive || other.spouseId !== null) continue;
+    if (other.romanticInterest !== v.id) continue;
+    if ((v.romanticAffection[other.id] ?? 0) < 30) continue;
+    if ((other.romanticAffection[v.id] ?? 0) < 30) continue;
+    if (rand() >= 0.12) continue;
+    v.spouseId = other.id;
+    other.spouseId = v.id;
+    log(state, `${v.name} and ${other.name} were married after a well-known courtship.`, 'marriage');
+    return true;
+  }
+
+  return false;
 }
 
 function processDeaths(state: VillageState, villagers: Villager[]): void {

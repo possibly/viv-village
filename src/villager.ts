@@ -83,10 +83,13 @@ function occupationStartingWealth(occ: Occupation): number {
 export function tavernChance(v: Villager): number {
   if (v.wealth < 2) return 0;
   if (v.health < 20 || v.daysIll > 0) return 0;
+  const feudCount = Object.values(v.quarreled).filter(Boolean).length;
   let p = 0.1;
   p += v.personality.sociable * 0.4;
   p += (v.socialNeed / 100) * 0.3;
+  p += Math.min(0.1, v.reputation / 1000);
   p -= v.personality.thrifty * 0.15;
+  p -= Math.min(0.15, feudCount * 0.03);
   if (v.occupation === 'priest') p -= 0.2;
   if (v.occupation === 'innkeeper') p = 0; // they run it, not visit
   return Math.max(0, Math.min(1, p));
@@ -103,7 +106,13 @@ const EMPTY_WORK_RESULT: WorkResult = {
 
 export function workOutput(v: Villager, fertility: number): WorkResult {
   if (!v.alive || v.activity === 'ill') return EMPTY_WORK_RESULT;
-  const effort = v.personality.hardworking * (v.health / 100) * (1 - v.hunger / 200);
+  const matchingLeads = v.jobLeads.filter(lead => lead.occupation === v.occupation).length;
+  const effort =
+    v.personality.hardworking *
+    (v.health / 100) *
+    (1 - v.hunger / 200) *
+    (1 + Math.min(0.15, v.reputation / 500)) *
+    (1 + Math.min(0.2, matchingLeads * 0.05));
   switch (v.occupation) {
     case 'farmer': return { ...EMPTY_WORK_RESULT, grain: effort * fertility * 2.5 };
     case 'baker': return { ...EMPTY_WORK_RESULT, bread: effort * 3 };
