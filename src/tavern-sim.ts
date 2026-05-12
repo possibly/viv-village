@@ -1,9 +1,10 @@
 /**
  * Viv-powered tavern social simulation.
- * Runs 10 evenings; villagers form friendships, fall in love, share job leads, quarrel, and reconcile.
+ * For each simulated day, the village sim runs first, then the tavern runs 10 Viv micro-steps
+ * using the villagers who the low-fidelity evening step already sent to the tavern.
  */
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -23,8 +24,7 @@ import type {
 import set from 'lodash/set.js';
 
 import { createVillage, simulateDay } from './simulation.js';
-import { tavernChance } from './villager.js';
-import type { Villager } from './types.js';
+import type { Villager, VillageState } from './types.js';
 
 // ─── Bundle ──────────────────────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
@@ -47,6 +47,62 @@ const charUIDs:    Set<UID>             = new Set();
 const actionUIDs:  UID[]                = [];
 let vivState:      VivInternalState | null = null;
 let timestamp      = 0;
+
+type Snapshot = {
+  schemaVersion: string;
+  timestamp: number;
+  entities: Record<UID, AnyView>;
+  vivInternalState: VivInternalState;
+};
+
+type CliOptions = {
+  days: number;
+  snapshotPath: string | null;
+};
+
+function parseArgs(argv: string[]): CliOptions {
+  const opts: CliOptions = { days: 7, snapshotPath: null };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if ((arg === '--days' || arg === '-d') && argv[i + 1]) {
+      opts.days = Math.max(0, parseInt(argv[++i], 10) || 0);
+      continue;
+    }
+    if ((arg === '--snapshot' || arg === '-s') && argv[i + 1]) {
+      opts.snapshotPath = argv[++i];
+      continue;
+    }
+  }
+
+  return opts;
+}
+
+function emptyVivInternalState(): VivInternalState {
+  return {
+    actionQueues: {},
+    planQueue: [],
+    activePlans: {},
+    queuedConstructStatuses: {},
+    actionEmbargoes: {},
+    lastMemoryDecayTimestamp: null,
+  };
+}
+
+function buildSnapshot(): Snapshot {
+  return {
+    schemaVersion: TAVERN_BUNDLE.metadata?.schemaVersion ?? '0.10.1',
+    timestamp,
+    entities: structuredClone(entities),
+    vivInternalState: structuredClone(vivState ?? emptyVivInternalState()),
+  };
+}
+
+function saveSnapshot(snapshotPath: string): void {
+  const snapshot = buildSnapshot();
+  mkdirSync(dirname(snapshotPath), { recursive: true });
+  writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2));
+}
 
 // ─── Adapter ─────────────────────────────────────────────────────────────────
 const ADAPTER: HostApplicationAdapter = {
@@ -176,37 +232,22 @@ function syncBack(v: Villager): void {
 
 // ─── Run one evening at the tavern ───────────────────────────────────────────
 async function runEvening(
+  state: VillageState,
   villagers: Villager[],
   eveningNum: number,
 ): Promise<void> {
   const alive = villagers.filter(v => v.alive);
-
-  // Decide who visits the tavern tonight
-  const tavernSet = new Set<number>();
-  for (const v of alive) {
-    if (v.occupation === 'innkeeper') {
-      tavernSet.add(v.id);
-      v.activity = 'working';
-      continue;
-    }
-    const p = tavernChance(v);
-    if (Math.random() < p) {
-      const cost = 1 + Math.floor(Math.random() * 2);
-      if (v.wealth >= cost) {
-        v.wealth -= cost;
-        // Don't pre-reduce socialNeed — Viv actions (chat, gossip, confide) handle it
-        v.activity = 'at_tavern';
-        tavernSet.add(v.id);
-      }
-    }
-  }
-
+  const tavernSet = new Set<number>(
+    alive
+      .filter(v => v.activity === 'at_tavern' || v.occupation === 'innkeeper')
+      .map(v => v.id),
+  );
   const goers = alive.filter(v => tavernSet.has(v.id));
-  const actors = goers.filter(v => v.occupation !== 'innkeeper');
+  const actors = goers.filter(v => v.occupation !== 'innkeeper' && v.age >= 16);
 
   console.log(`\n=== Evening ${eveningNum} — ${goers.length} villagers at the tavern ===`);
 
-  if (goers.length < 2) {
+  if (goers.length < 2 || actors.length === 0) {
     console.log('  (Too quiet tonight.)');
     timestamp += 24;
     return;
@@ -220,21 +261,28 @@ async function runEvening(
   entities[HOME_UID]   = { entityType: EntityType.Location, id: HOME_UID,   name: 'Home' };
 
   const actionsBefore = actionUIDs.length;
+  const stepsPerEvening = 10;
+  const ticksPerStep = 1;
 
-  // Each actor takes one action via the selector
-  for (const v of actors) {
-    try {
-      await selectAction({
-        initiatorID: toUID(v),
-      });
-    } catch {
-      // No eligible action — villager has a quiet drink
+  // Run exactly 10 high-fidelity Viv micro-steps inside this one low-fidelity evening.
+  // Every attendee gets one action attempt on each tick.
+  for (let step = 0; step < stepsPerEvening; step++) {
+    for (const actor of actors) {
+      try {
+        await selectAction({
+          initiatorID: toUID(actor),
+        });
+      } catch {
+        // No eligible action for this actor on this micro-step.
+      }
     }
+    timestamp += ticksPerStep;
   }
 
   // Report new actions
   const newActionIDs = actionUIDs.slice(actionsBefore);
   let quietCount = 0;
+  const nightlyActionNames = new Map<number, string[]>();
 
   for (const actionID of newActionIDs) {
     const action = entities[actionID] as unknown as ActionView;
@@ -242,6 +290,21 @@ async function runEvening(
 
     const text = action.report ?? action.gloss ?? '(no description)';
     console.log(`  ${text}`);
+    const actorId = typeof action.initiator === 'string' && action.initiator.startsWith('v-')
+      ? fromUID(action.initiator)
+      : null;
+    if (actorId !== null) {
+      const actionNames = nightlyActionNames.get(actorId) ?? [];
+      actionNames.push(action.name);
+      nightlyActionNames.set(actorId, actionNames);
+    }
+    state.log.push({
+      year: state.year,
+      day: state.day - 1,
+      season: state.season,
+      text,
+      type: 'social',
+    });
 
     // Record job leads on recipient villagers
     if (action.name === 'share-job-tip') {
@@ -263,6 +326,10 @@ async function runEvening(
     }
   }
 
+  for (const v of alive) {
+    v.lastTavernActions = nightlyActionNames.get(v.id) ?? [];
+  }
+
   const quietVillagers = actors.filter(v => {
     return !newActionIDs.some(id => {
       const a = entities[id] as unknown as ActionView;
@@ -277,8 +344,6 @@ async function runEvening(
 
   // Sync Viv entity views back to Villager objects
   for (const v of alive) syncBack(v);
-
-  timestamp += 24;
 }
 
 // ─── Print final social state ─────────────────────────────────────────────────
@@ -286,7 +351,7 @@ function printSocialSummary(villagers: Villager[]): void {
   const alive = villagers.filter(v => v.alive);
 
   console.log('\n\n════════════════════════════════════════════════');
-  console.log('  Social Summary After 10 Evenings at the Tavern');
+  console.log('  Social Summary After Tavern Simulation');
   console.log('════════════════════════════════════════════════\n');
 
   // ── Top friendships
@@ -372,46 +437,51 @@ function printSocialSummary(villagers: Villager[]): void {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
+  const options = parseArgs(process.argv.slice(2));
   const state = createVillage();
-
-  // Advance a week so food/work systems are running
-  for (let d = 0; d < 7; d++) simulateDay(state);
-
-  const alive = state.villagers.filter(v => v.alive);
-
-  // Seed small acquaintance scores — villagers know each other from daily life
-  for (const v of alive) {
-    for (const o of alive) {
-      if (o.id !== v.id) {
-        v.friendships[o.id] = Math.floor(Math.random() * 6); // 0–5 starting acquaintance
-        // Seed initial romantic attraction for ~15% of pairs (pre-existing crushes)
-        if (Math.random() < 0.15) {
-          v.romanticAffection[o.id] = Math.floor(Math.random() * 8 + 3); // 3–10
-        }
-      }
-    }
-  }
-
-  // Sprinkle a bit of initial gossip so share-gossip fires occasionally
-  for (const v of alive) {
-    if (Math.random() < 0.4) v.gossipKnows.push('local rumor');
-  }
+  let seededSocialState = false;
 
   console.log('╔══════════════════════════════════════╗');
   console.log('║   Viv Village — Tavern Simulation    ║');
   console.log('╚══════════════════════════════════════╝');
-  console.log(`Population: ${alive.length}  |  Season: ${state.season}  |  Year ${state.year}`);
+  console.log(`Starting population: ${state.villagers.filter(v => v.alive).length}`);
+  console.log(`Days: ${options.days}`);
   console.log(`Actions available: chat, deep-talk, flirt, declare-affection,`);
   console.log(`  buy-a-round, share-gossip, confide, share-job-tip,`);
   console.log(`  offer-mentorship, toast-the-village, quarrel, reconcile`);
 
   initializeVivRuntime({ contentBundle: TAVERN_BUNDLE, adapter: ADAPTER });
 
-  for (let evening = 1; evening <= 10; evening++) {
-    await runEvening(state.villagers, evening);
+  for (let day = 1; day <= options.days; day++) {
+    simulateDay(state);
+
+    const alive = state.villagers.filter(v => v.alive);
+    if (!seededSocialState) {
+      for (const v of alive) {
+        for (const o of alive) {
+          if (o.id === v.id) continue;
+          v.friendships[o.id] = v.friendships[o.id] ?? Math.floor(Math.random() * 6);
+          if (v.romanticAffection[o.id] === undefined && Math.random() < 0.15) {
+            v.romanticAffection[o.id] = Math.floor(Math.random() * 8 + 3);
+          }
+        }
+        if (v.gossipKnows.length === 0 && Math.random() < 0.4) {
+          v.gossipKnows.push('local rumor');
+        }
+      }
+      seededSocialState = true;
+    }
+
+    console.log(`\nDay ${day}: Year ${state.year}, day ${state.day - 1}, ${state.season}`);
+    await runEvening(state, state.villagers, day);
   }
 
   printSocialSummary(state.villagers);
+
+  if (options.snapshotPath) {
+    saveSnapshot(options.snapshotPath);
+    console.log(`\nSnapshot written to ${options.snapshotPath}`);
+  }
 }
 
 main().catch(err => {

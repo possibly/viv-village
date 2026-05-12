@@ -99,7 +99,7 @@ export function createVillage(): VillageState {
   };
 }
 
-export function simulateDay(state: VillageState): void {
+export function simulateDay(state: VillageState, options: { skipTavern?: boolean } = {}): void {
   state.season = season(state.day);
   const alive = state.villagers.filter(v => v.alive);
   state.tavernVisits = 0;
@@ -110,7 +110,9 @@ export function simulateDay(state: VillageState): void {
   processMilling(state, alive);
   processHealing(alive, workSummary.healing);
   applyHealthDecay(alive);
-  runTavernPhase(state, alive);
+  if (!options.skipTavern) {
+    runTavernPhase(state, alive);
+  }
   growSocialNeed(alive);
   processDeaths(state, alive);
 
