@@ -1,9 +1,15 @@
-import type { VillageState, Villager, Season, Occupation } from './types';
+import type { VillageState, Villager, Season, Occupation, WorkResult } from './types';
 import type { LogEntry } from './types';
 import { createVillager, tavernChance, workOutput, setNextId, getNextId } from './villager';
 
 const DAYS_PER_SEASON = 91;
 const SEASONS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+const SEASON_WORK_MODIFIER: Record<Season, number> = {
+  spring: 0.8,
+  summer: 1.0,
+  autumn: 1.2,
+  winter: 0.1,
+};
 
 function season(day: number): Season {
   return SEASONS[Math.floor(((day - 1) % 365) / DAYS_PER_SEASON)] ?? 'winter';
@@ -18,6 +24,8 @@ function rand() { return Math.random(); }
 function log(state: VillageState, text: string, type: LogEntry['type'] = 'info') {
   state.log.push({ year: state.year, day: state.day, season: state.season, text, type });
 }
+
+type WorkSummary = WorkResult;
 
 const OCCUPATION_WEIGHTS: [Occupation, number][] = [
   ['farmer', 40],
@@ -95,145 +103,15 @@ export function simulateDay(state: VillageState): void {
   const alive = state.villagers.filter(v => v.alive);
   state.tavernVisits = 0;
 
-  // --- MORNING: hunger & health ---
-  for (const v of alive) {
-    v.hunger = Math.min(100, v.hunger + 8);
-  }
-
-  // feed from bread then grain
-  let fedCount = 0;
-  for (const v of alive) {
-    if (v.hunger > 20) {
-      if (state.bread > 0) {
-        state.bread -= 1;
-        v.hunger = Math.max(0, v.hunger - 40);
-        fedCount++;
-      } else if (state.grain >= 2) {
-        state.grain -= 2;
-        v.hunger = Math.max(0, v.hunger - 30);
-        fedCount++;
-      }
-    }
-  }
-
-  // --- WORK PHASE ---
-  let grainProduced = 0;
-  let breadProduced = 0;
-  let toolsProduced = 0;
-  let healingDone = 0;
-  let merchantGold = 0;
-  let tavernIncome = 0;
-
-  const seasonMod = { spring: 0.8, summer: 1.0, autumn: 1.2, winter: 0.1 };
-  const farmMod = seasonMod[state.season];
-
-  for (const v of alive) {
-    if (v.daysIll > 0) {
-      v.activity = 'ill';
-      continue;
-    }
-    v.activity = 'working';
-    const out = workOutput(v, state.fieldFertility * farmMod);
-    grainProduced    += out.grain        ?? 0;
-    breadProduced    += out.bread        ?? 0;
-    toolsProduced    += (out.tools       ?? 0);
-    healingDone      += out.healing      ?? 0;
-    merchantGold     += out.gold         ?? 0;
-    tavernIncome     += out.tavernIncome ?? 0;
-
-    // worker earns wages
-    const wage = v.occupation === 'farmer' ? 0.3 :
-                 v.occupation === 'peasant' ? 0.1 : 0.5;
-    v.wealth += wage * v.personality.hardworking;
-  }
-
-  state.grain  = Math.max(0, state.grain  + grainProduced);
-  state.bread  = Math.max(0, state.bread  + breadProduced);
-  state.tools  = Math.max(0, state.tools  + toolsProduced);
-  state.treasury += merchantGold * 0.1 + tavernIncome * 0.2;
-
-  // miller converts grain to flour if baker present
-  const millerCount  = alive.filter(v => v.occupation === 'miller').length;
-  const bakerCount   = alive.filter(v => v.occupation === 'baker').length;
-  if (millerCount > 0 && bakerCount > 0 && state.grain > 10) {
-    const milled = Math.min(state.grain * 0.3, millerCount * 5);
-    state.grain -= milled;
-    state.bread += milled * bakerCount * 0.8;
-  }
-
-  // herbalist heals ill villagers
-  if (healingDone > 0) {
-    const ill = alive.filter(v => v.daysIll > 0);
-    for (const v of ill) {
-      if (rand() < healingDone * 0.15) {
-        v.daysIll = 0;
-        v.activity = 'resting';
-      }
-    }
-  }
-
-  // --- HEALTH DECAY ---
-  for (const v of alive) {
-    if (v.hunger > 70) v.health -= rnd(2, 5);
-    if (v.daysIll > 0) {
-      v.health -= rnd(1, 4);
-      v.daysIll++;
-    }
-    // natural recovery if fed and healthy
-    if (v.hunger < 30 && v.daysIll === 0) {
-      v.health = Math.min(100, v.health + 0.5);
-    }
-    v.age += 1 / 365;
-  }
-
-  // --- EVENING: TAVERN ---
-  if (state.season !== 'winter' || rand() < 0.3) {
-    for (const v of alive) {
-      if (v.occupation === 'innkeeper') {
-        v.activity = 'working';
-        continue;
-      }
-      if (rand() < tavernChance(v)) {
-        const cost = Math.floor(rnd(1, 3));
-        if (v.wealth >= cost) {
-          v.wealth -= cost;
-          v.socialNeed = Math.max(0, v.socialNeed - 35);
-          v.activity = 'at_tavern';
-          state.tavernVisits++;
-          // innkeeper earns
-          const keeper = alive.find(v => v.occupation === 'innkeeper');
-          if (keeper) keeper.wealth += cost * 0.8;
-        }
-      }
-    }
-  }
-
-  // social need grows for those not at tavern
-  for (const v of alive) {
-    if (v.activity !== 'at_tavern') {
-      v.socialNeed = Math.min(100, v.socialNeed + 3);
-    }
-  }
-
-  // --- DEATHS ---
-  for (const v of alive) {
-    let deathChance = 0;
-    if (v.health <= 0) deathChance = 1;
-    else if (v.health < 20) deathChance = 0.15;
-    else if (v.age > 65) deathChance = 0.002 * (v.age - 60);
-    else if (v.age > 55) deathChance = 0.001;
-
-    if (rand() < deathChance) {
-      v.alive = false;
-      const cause = v.daysIll > 0 ? 'illness' : v.hunger > 80 ? 'starvation' : v.age > 55 ? 'old age' : 'poor health';
-      log(state, `${v.name} (${Math.floor(v.age)}), ${v.occupation}, died of ${cause}.`, 'death');
-      // widow spouse
-      if (v.spouseId) {
-        const sp = state.villagers.find(x => x.id === v.spouseId);
-        if (sp) sp.spouseId = null;
-      }
-    }
-  }
+  advanceMorningNeeds(alive);
+  runFeedingPhase(state, alive);
+  const workSummary = runWorkPhase(state, alive);
+  processMilling(state, alive);
+  processHealing(alive, workSummary.healing);
+  applyHealthDecay(alive);
+  runTavernPhase(state, alive);
+  growSocialNeed(alive);
+  processDeaths(state, alive);
 
   // --- BIRTHS ---
   const aliveNow = state.villagers.filter(v => v.alive);
@@ -300,6 +178,181 @@ export function simulateDay(state: VillageState): void {
     state.fieldFertility = 0.7 + rand() * 0.8; // annual variation
     log(state, `Year ${state.year} begins. Field fertility: ${(state.fieldFertility * 100).toFixed(0)}%.`, 'event');
   }
+}
+
+function advanceMorningNeeds(villagers: Villager[]): void {
+  for (const villager of villagers) {
+    villager.hunger = Math.min(100, villager.hunger + 8);
+  }
+}
+
+function runFeedingPhase(state: VillageState, villagers: Villager[]): void {
+  for (const villager of villagers) {
+    if (villager.hunger <= 20) {
+      continue;
+    }
+
+    if (state.bread > 0) {
+      state.bread -= 1;
+      villager.hunger = Math.max(0, villager.hunger - 40);
+      continue;
+    }
+
+    if (state.grain >= 2) {
+      state.grain -= 2;
+      villager.hunger = Math.max(0, villager.hunger - 30);
+    }
+  }
+}
+
+function runWorkPhase(state: VillageState, villagers: Villager[]): WorkSummary {
+  const summary: WorkSummary = {
+    grain: 0,
+    bread: 0,
+    tools: 0,
+    healing: 0,
+    gold: 0,
+    tavernIncome: 0,
+  };
+  const fertility = state.fieldFertility * SEASON_WORK_MODIFIER[state.season];
+
+  for (const villager of villagers) {
+    if (villager.daysIll > 0) {
+      villager.activity = 'ill';
+      continue;
+    }
+
+    villager.activity = 'working';
+    const output = workOutput(villager, fertility);
+    summary.grain += output.grain;
+    summary.bread += output.bread;
+    summary.tools += output.tools;
+    summary.healing += output.healing;
+    summary.gold += output.gold;
+    summary.tavernIncome += output.tavernIncome;
+    villager.wealth += wageFor(villager) * villager.personality.hardworking;
+  }
+
+  state.grain = Math.max(0, state.grain + summary.grain);
+  state.bread = Math.max(0, state.bread + summary.bread);
+  state.tools = Math.max(0, state.tools + summary.tools);
+  state.treasury += summary.gold * 0.1 + summary.tavernIncome * 0.2;
+
+  return summary;
+}
+
+function processMilling(state: VillageState, villagers: Villager[]): void {
+  const millerCount = villagers.filter(v => v.occupation === 'miller').length;
+  const bakerCount = villagers.filter(v => v.occupation === 'baker').length;
+  if (millerCount === 0 || bakerCount === 0 || state.grain <= 10) {
+    return;
+  }
+
+  const milled = Math.min(state.grain * 0.3, millerCount * 5);
+  state.grain -= milled;
+  state.bread += milled * bakerCount * 0.8;
+}
+
+function processHealing(villagers: Villager[], healingDone: number): void {
+  if (healingDone <= 0) {
+    return;
+  }
+
+  for (const villager of villagers) {
+    if (villager.daysIll <= 0) {
+      continue;
+    }
+    if (rand() < healingDone * 0.15) {
+      villager.daysIll = 0;
+      villager.activity = 'resting';
+    }
+  }
+}
+
+function applyHealthDecay(villagers: Villager[]): void {
+  for (const villager of villagers) {
+    if (villager.hunger > 70) villager.health -= rnd(2, 5);
+    if (villager.daysIll > 0) {
+      villager.health -= rnd(1, 4);
+      villager.daysIll++;
+    }
+    if (villager.hunger < 30 && villager.daysIll === 0) {
+      villager.health = Math.min(100, villager.health + 0.5);
+    }
+    villager.age += 1 / 365;
+  }
+}
+
+function runTavernPhase(state: VillageState, villagers: Villager[]): void {
+  if (state.season === 'winter' && rand() >= 0.3) {
+    return;
+  }
+
+  const innkeeper = villagers.find(v => v.occupation === 'innkeeper');
+  for (const villager of villagers) {
+    if (villager.occupation === 'innkeeper') {
+      villager.activity = 'working';
+      continue;
+    }
+    if (rand() >= tavernChance(villager)) {
+      continue;
+    }
+
+    const cost = Math.floor(rnd(1, 3));
+    if (villager.wealth < cost) {
+      continue;
+    }
+
+    villager.wealth -= cost;
+    villager.socialNeed = Math.max(0, villager.socialNeed - 35);
+    villager.activity = 'at_tavern';
+    state.tavernVisits++;
+    if (innkeeper) innkeeper.wealth += cost * 0.8;
+  }
+}
+
+function growSocialNeed(villagers: Villager[]): void {
+  for (const villager of villagers) {
+    if (villager.activity !== 'at_tavern') {
+      villager.socialNeed = Math.min(100, villager.socialNeed + 3);
+    }
+  }
+}
+
+function processDeaths(state: VillageState, villagers: Villager[]): void {
+  for (const villager of villagers) {
+    if (rand() >= deathChanceFor(villager)) {
+      continue;
+    }
+
+    villager.alive = false;
+    const cause = villager.daysIll > 0
+      ? 'illness'
+      : villager.hunger > 80
+        ? 'starvation'
+        : villager.age > 55
+          ? 'old age'
+          : 'poor health';
+    log(state, `${villager.name} (${Math.floor(villager.age)}), ${villager.occupation}, died of ${cause}.`, 'death');
+    if (villager.spouseId) {
+      const spouse = state.villagers.find(other => other.id === villager.spouseId);
+      if (spouse) spouse.spouseId = null;
+    }
+  }
+}
+
+function wageFor(villager: Villager): number {
+  if (villager.occupation === 'farmer') return 0.3;
+  if (villager.occupation === 'peasant') return 0.1;
+  return 0.5;
+}
+
+function deathChanceFor(villager: Villager): number {
+  if (villager.health <= 0) return 1;
+  if (villager.health < 20) return 0.15;
+  if (villager.age > 65) return 0.002 * (villager.age - 60);
+  if (villager.age > 55) return 0.001;
+  return 0;
 }
 
 function randomEvent(state: VillageState, alive: Villager[]) {

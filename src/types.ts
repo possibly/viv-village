@@ -30,6 +30,15 @@ export type Personality = {
   thrifty: number;
 };
 
+export interface WorkResult {
+  grain: number;
+  bread: number;
+  tools: number;
+  healing: number;
+  gold: number;
+  tavernIncome: number;
+}
+
 export interface Villager {
   id: number;
   name: string;

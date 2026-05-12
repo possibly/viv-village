@@ -1,4 +1,11 @@
-import type { Villager, Occupation, Gender, Personality, Activity } from './types';
+import type {
+  Villager,
+  Occupation,
+  Gender,
+  Personality,
+  Activity,
+  WorkResult,
+} from './types';
 import { randomName } from './names';
 
 let _nextId = 1;
@@ -84,20 +91,27 @@ export function tavernChance(v: Villager): number {
   return Math.max(0, Math.min(1, p));
 }
 
-export function workOutput(v: Villager, fertility: number): Partial<Record<string, number>> {
-  if (!v.alive || v.activity === 'ill') return {};
+const EMPTY_WORK_RESULT: WorkResult = {
+  grain: 0,
+  bread: 0,
+  tools: 0,
+  healing: 0,
+  gold: 0,
+  tavernIncome: 0,
+};
+
+export function workOutput(v: Villager, fertility: number): WorkResult {
+  if (!v.alive || v.activity === 'ill') return EMPTY_WORK_RESULT;
   const effort = v.personality.hardworking * (v.health / 100) * (1 - v.hunger / 200);
   switch (v.occupation) {
-    case 'farmer':    return { grain: effort * fertility * 2.5 };
-    case 'miller':    return { flourReady: effort };
-    case 'baker':     return { bread: effort * 3 };
-    case 'blacksmith':return { tools: effort * 0.8 };
-    case 'carpenter': return { tools: effort * 0.6 };
-    case 'merchant':  return { gold: effort * 1.5 };
-    case 'innkeeper': return { tavernIncome: effort * 2 };
-    case 'herbalist': return { healing: effort };
-    case 'priest':    return { morale: effort };
-    default:          return { labor: effort };
+    case 'farmer': return { ...EMPTY_WORK_RESULT, grain: effort * fertility * 2.5 };
+    case 'baker': return { ...EMPTY_WORK_RESULT, bread: effort * 3 };
+    case 'blacksmith': return { ...EMPTY_WORK_RESULT, tools: effort * 0.8 };
+    case 'carpenter': return { ...EMPTY_WORK_RESULT, tools: effort * 0.6 };
+    case 'merchant': return { ...EMPTY_WORK_RESULT, gold: effort * 1.5 };
+    case 'innkeeper': return { ...EMPTY_WORK_RESULT, tavernIncome: effort * 2 };
+    case 'herbalist': return { ...EMPTY_WORK_RESULT, healing: effort };
+    default: return EMPTY_WORK_RESULT;
   }
 }
 
